@@ -1,0 +1,54 @@
+# Use ROCm base image for AMD GPU support
+FROM rocm/pytorch:latest
+
+WORKDIR /app
+
+# Set environment variables for ROCm
+ENV ROCM_PATH=/opt/rocm
+ENV HIP_PATH=/opt/rocm
+ENV PYTORCH_ROCM_ARCH=gfx1031
+ENV HSA_OVERRIDE_GFX_VERSION=10.3.0
+ENV HIP_VISIBLE_DEVICES=0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3-pip python3-venv \
+    git build-essential libglib2.0-0 libxml2-dev libxslt-dev poppler-utils \
+    libopenjp2-7 libjpeg-dev zlib1g-dev \
+    cmake pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up a Python virtual environment (optional but good practice)
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Install PyTorch with ROCm support
+RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm5.6
+
+# Clone Marker repository
+RUN git clone https://github.com/datalab-to/marker.git .
+
+# Install Marker dependencies
+RUN pip install --no-cache-dir -e .
+
+# Install additional dependencies for FastAPI server
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    python-multipart
+
+# Set HOME to /app for model caching
+ENV HOME=/app
+
+# Marker downloads models on first use or via specific commands.
+# Pre-download models into the container.
+COPY download_marker_models.py .
+RUN python3 download_marker_models.py
+
+# Expose a port for our custom Marker API server
+EXPOSE 8003
+
+# Command to run the custom Marker API server
+COPY marker_api_server.py .
+CMD ["python3", "marker_api_server.py"]

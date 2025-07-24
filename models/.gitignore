@@ -1,0 +1,5 @@
+# Ignore all contents in the models directory
+*
+
+# But allow this .gitignore file itself
+!.gitignore
