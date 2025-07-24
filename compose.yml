@@ -1,0 +1,68 @@
+services:
+  # NiceGUI Frontend and RAG Backend Logic with Transformers
+  app:
+    build:
+      context: ./app
+      dockerfile: Podmanfile.app
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    volumes:
+      - ./sources:/app/sources:Z # Mount the local sources folder
+      - ./app/chroma_db:/app/chroma_db:Z # Persistent storage for ChromaDB
+      - ~/.cache/huggingface:/root/.cache/huggingface:Z # Cache for Hugging Face models
+    environment:
+      APP_PORT: ${APP_PORT}
+      GRANITE_MODEL_NAME: ${GRANITE_MODEL_NAME}
+      CHROMA_PERSIST_DIR: ${CHROMA_PERSIST_DIR}
+      DOCLING_API_URL: http://docling:8001
+      MARKER_API_URL: http://marker_ocr:8003
+      # ROCm environment variables
+      ROCM_PATH: /opt/rocm
+      HIP_PATH: /opt/rocm
+      PYTORCH_ROCM_ARCH: gfx1031
+      HSA_OVERRIDE_GFX_VERSION: 10.3.0
+      HIP_VISIBLE_DEVICES: 0
+    devices:
+      - /dev/kfd:/dev/kfd # AMD GPU kernel driver
+      - /dev/dri:/dev/dri # AMD GPU DRI devices
+    depends_on:
+      - docling
+      - marker_ocr
+    restart: unless-stopped
+
+  # Docling API Service
+  docling:
+    build:
+      context: ./docling_service
+      dockerfile: Podmanfile.docling
+    ports:
+      - "${DOCLING_API_PORT}:${DOCLING_API_PORT}"
+    environment:
+      DOCLING_PORT: ${DOCLING_API_PORT}
+    restart: unless-stopped
+
+  # Marker OCR Service with AMD GPU support
+  marker_ocr:
+    build:
+      context: ./marker_service
+      dockerfile: podmanfile.marker
+    ports:
+      - "${MARKER_API_PORT}:${MARKER_API_PORT}"
+    environment:
+      MARKER_PORT: ${MARKER_API_PORT}
+      # ROCm environment variables
+      ROCM_PATH: /opt/rocm
+      HIP_PATH: /opt/rocm
+      PYTORCH_ROCM_ARCH: gfx1031
+      HSA_OVERRIDE_GFX_VERSION: 10.3.0
+      HIP_VISIBLE_DEVICES: 0
+    devices:
+      - /dev/kfd:/dev/kfd # AMD GPU kernel driver
+      - /dev/dri:/dev/dri # AMD GPU DRI devices
+    restart: unless-stopped
+
+volumes:
+  chroma_data:
+    driver: local
+  huggingface_cache:
+    driver: local

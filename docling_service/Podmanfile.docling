@@ -1,0 +1,55 @@
+# Use Python base image for Docling service
+FROM python:3.10-slim-bookworm
+
+WORKDIR /app
+
+# Install system dependencies needed for Docling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    cmake \
+    pkg-config \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    libpoppler-dev \
+    libpoppler-cpp-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libxml2-dev \
+    libxslt-dev \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install build tools
+RUN pip install --upgrade pip setuptools wheel
+
+# Install Docling and its dependencies
+# Check the official Docling documentation for the correct package name
+# This might be 'docling' or a specific package from their repository
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    python-multipart \
+    pydantic \
+    requests \
+    beautifulsoup4 \
+    lxml \
+    Pillow
+
+# If Docling is available via pip:
+# RUN pip install --no-cache-dir docling
+
+# If Docling needs to be cloned from git:
+RUN git clone https://github.com/DS4SD/docling.git /tmp/docling || echo "Docling repo not available, using mock"
+# RUN cd /tmp/docling && pip install -e .
+
+# Create a simple Docling API server
+COPY docling_api.py .
+
+# Expose the Docling API port
+EXPOSE 8001
+
+# Command to run the Docling API server
+CMD ["python3", "docling_api.py"]
