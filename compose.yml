@@ -7,9 +7,9 @@ services:
     ports:
       - "${APP_PORT}:${APP_PORT}"
     volumes:
-      - ./sources:/app/sources:Z # Mount the local sources folder
-      - ./app/chroma_db:/app/chroma_db:Z # Persistent storage for ChromaDB
-      - ~/.cache/huggingface:/root/.cache/huggingface:Z # Cache for Hugging Face models
+      - $HOME/GitHubRepos/openNotebookLM/sources:/app/sources:Z # Mount the local sources folder
+      - $HOME/GitHubRepos/openNotebookLM/app/chroma_db:/app/chroma_db:Z # Persistent storage for ChromaDB
+      - $HOME/.cache/huggingface:/root/.cache/huggingface:Z # Cache for Hugging Face models
     environment:
       APP_PORT: ${APP_PORT}
       GRANITE_MODEL_NAME: ${GRANITE_MODEL_NAME}

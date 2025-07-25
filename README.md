@@ -107,34 +107,34 @@ Before you start, make sure you have the following installed and configured on y
 
 ## 4. Project Structure
 
-Your project will live in `~/Documents/openLM/` and will look like this:
+Assuming your project will live in `~/Documents/openLM/` it will look like this:
 
 ```
-~/Docuemnts/openLM/
-├── podman-compose.yml          # Service orchestration with ROCm GPU support
-├── podman.env                  # Environment variables (Granite model, ROCm settings)
-├── setup_rocm.sh              # Automated setup script for AMD GPU
-├── app/                        # Main NiceGUI RAG application with Transformers
-│   ├── Podmanfile.app         # ROCm-enabled container for app
-│   ├── main.py                # NiceGUI frontend and orchestrator
-│   ├── rag_pipeline.py        # RAG logic with Transformers + ROCm
-│   ├── requirements.txt       # Python deps (transformers, torch+rocm)
-│   └── chroma_db/             # Persistent ChromaDB storage
-├── sources/                    # Your document storage (mounted volume)
-│   ├── sample_research/       # Example notebook folder 1
+~/Documents/openLM/
+├── compose.yml                 # Service orchestration with ROCm GPU support
+├── .env                       # Environment variables (auto-loaded)
+├── podman.env                 # Environment template (copy to .env)
+├── app/                       # Main NiceGUI RAG application with Transformers
+│   ├── Podmanfile.app        # ROCm-enabled container for app
+│   ├── main.py               # NiceGUI frontend and orchestrator
+│   ├── rag_pipeline.py       # RAG logic with Transformers + ROCm
+│   ├── requirements.txt      # Python deps (transformers, torch+rocm)
+│   └── chroma_db/            # Persistent ChromaDB storage
+├── sources/                   # Your document storage (mounted volume)
+│   ├── sample_research/      # Example notebook folder 1
 │   │   ├── research_notes.md
 │   │   ├── document1.pdf
 │   │   └── image.png
-│   └── project_docs/          # Example notebook folder 2
+│   └── project_docs/         # Example notebook folder 2
 │       ├── project_plan.txt
 │       └── report.docx
-├── docling_service/           # Document parsing service
-│   ├── Podmanfile.docling     # Python container for text processing
-│   └── docling_api.py         # FastAPI server for document parsing
-└── marker_service/            # ROCm-accelerated OCR service
-    ├── podmanfile.marker      # ROCm PyTorch container for Marker
+├── docling_service/          # Document parsing service
+│   ├── Podmanfile.docling    # Python container for text processing
+│   └── docling_api.py        # FastAPI server for document parsing
+└── marker_service/           # ROCm-accelerated OCR service
+    ├── podmanfile.marker     # ROCm PyTorch container for Marker
     ├── download_marker_models.py  # Pre-download OCR models
-    └── marker_api_server.py   # FastAPI server for OCR API
+    └── marker_api_server.py  # FastAPI server for OCR API
 ```
 
 **Key Changes from Llamafile Version:**
@@ -175,112 +175,26 @@ The model is specified in the `podman.env` file and can be changed without rebui
 
 ### 5.3. Create/Update Configuration Files
 
-Create or update these files in your `~/downloads/openLM/` directory:
+Create a `.env` file in the project root directory with environment variables:
 
-  * **`podman.env`**:
+```bash
+# Copy the provided example
+cp podman.env .env
+```
 
-    ```env
-    # General Application Settings
-    APP_PORT=8000
-    SOURCE_DIR=/downloads/openLM/sources
+The `.env` file contains essential configuration including:
+- Application ports (app: 8000, docling: 8001, marker: 8003)
+- Granite model selection (default: `ibm/granite-3b-code-instruct`)
+- ROCm GPU settings optimized for AMD RX 7700S
+- Directory paths for persistent storage
 
-    # Granite LLM Settings using Transformers
-    # Choose your preferred Granite model from Hugging Face
-    GRANITE_MODEL_NAME=ibm/granite-3b-code-instruct
+  * **`compose.yml`**:
 
-    # Docling API Server Settings
-    DOCLING_API_PORT=8001
+    The provided `compose.yml` file contains all necessary service definitions with proper ROCm GPU support, volume mounts, and environment variable references. No manual editing required.
 
-    # Marker API Server Settings
-    MARKER_API_PORT=8003
+### 5.4. Service Files
 
-    # ChromaDB Settings
-    CHROMA_PERSIST_DIR=/app/chroma_db
-
-    # ROCm/AMD GPU Settings for RX 7700S
-    ROCM_PATH=/opt/rocm
-    HIP_PATH=/opt/rocm
-    PYTORCH_ROCM_ARCH=gfx1031
-    HSA_OVERRIDE_GFX_VERSION=10.3.0
-    HIP_VISIBLE_DEVICES=0
-    ```
-
-  * **`podman-compose.yml`**:
-
-    ```yaml
-    version: '3.8'
-
-    services:
-      # NiceGUI Frontend and RAG Backend Logic with Transformers
-      app:
-        build:
-          context: ./app
-          podmanfile: Podmanfile.app
-        ports:
-          - "${APP_PORT}:${APP_PORT}"
-        volumes:
-          - ./sources:/app/sources:Z # Mount the local sources folder
-          - ./app/chroma_db:/app/chroma_db:Z # Persistent storage for ChromaDB
-          - ~/.cache/huggingface:/root/.cache/huggingface:Z # Cache for Hugging Face models
-        environment:
-          APP_PORT: ${APP_PORT}
-          GRANITE_MODEL_NAME: ${GRANITE_MODEL_NAME}
-          CHROMA_PERSIST_DIR: ${CHROMA_PERSIST_DIR}
-          DOCLING_API_URL: http://docling:8001
-          MARKER_API_URL: http://marker_ocr:8003
-          # ROCm environment variables
-          ROCM_PATH: /opt/rocm
-          HIP_PATH: /opt/rocm
-          PYTORCH_ROCM_ARCH: gfx1031
-          HSA_OVERRIDE_GFX_VERSION: 10.3.0
-          HIP_VISIBLE_DEVICES: 0
-        devices:
-          - /dev/kfd:/dev/kfd # AMD GPU kernel driver
-          - /dev/dri:/dev/dri # AMD GPU DRI devices
-        depends_on:
-          - docling
-          - marker_ocr
-        restart: unless-stopped
-
-      # Docling API Service
-      docling:
-        build:
-          context: ./docling_service
-          podmanfile: Podmanfile.docling
-        ports:
-          - "${DOCLING_API_PORT}:${DOCLING_API_PORT}"
-        environment:
-          DOCLING_PORT: ${DOCLING_API_PORT}
-        restart: unless-stopped
-
-      # Marker OCR Service with AMD GPU support
-      marker_ocr:
-        build:
-          context: ./marker_service
-          podmanfile: podmanfile.marker
-        ports:
-          - "${MARKER_API_PORT}:${MARKER_API_PORT}"
-        environment:
-          MARKER_PORT: ${MARKER_API_PORT}
-          # ROCm environment variables
-          ROCM_PATH: /opt/rocm
-          HIP_PATH: /opt/rocm
-          PYTORCH_ROCM_ARCH: gfx1031
-          HSA_OVERRIDE_GFX_VERSION: 10.3.0
-          HIP_VISIBLE_DEVICES: 0
-        devices:
-          - /dev/kfd:/dev/kfd # AMD GPU kernel driver
-          - /dev/dri:/dev/dri # AMD GPU DRI devices
-        restart: unless-stopped
-
-    volumes:
-      chroma_data:
-        driver: local
-      huggingface_cache:
-        driver: local
-    ```
-
-### 5.4. Create/Update Service Files
+All necessary service files (`main.py`, `rag_pipeline.py`, container files, etc.) are provided in the repository. No manual creation required.
 
 Ensure these files exist in their respective directories:
 
@@ -558,83 +472,63 @@ Ensure these files exist in their respective directories:
 
 ## 6. Building and Running the Application
 
-1.  **Navigate to the project root:**
+### Quick Start Commands
 
-    ```bash
-    cd ~/downloads/openLM/
-    ```
-2.  **Build the container images:** This downloads ROCm base images, installs dependencies, and pre-downloads AI models. **This can take 30-60 minutes and requires 15-20GB disk space.**
+```bash
+# Navigate to project directory
+cd ~/downloads/openLM/
 
-  ```bash
-  podman-compose build
-  ```
+# Stop any running containers (if restarting)
+podman compose down
 
-  **Build Progress Monitoring:**
-  ```bash
-  # Monitor build progress in another terminal
-  podman-compose build --progress=plain
-  ```
+# Start all services (builds automatically on first run)
+podman compose up -d
 
-  **Troubleshooting Build Issues:**
-  - **ROCm/PyTorch errors:** Ensure ROCm 5.6+ is installed: `rocm-smi --version`
-  - **Network timeouts:** Large model downloads may timeout - retry the build
-  - **Disk space:** Ensure 20GB+ free space: `df -h`
-  - **Memory issues:** Close other applications during build
+# Follow logs as the application starts
+podman compose logs -f
+```
 
-3.  **Start the services:**
+### First Run Process
 
-    ```bash
-    podman-compose up -d
-    ```
+**Initial startup downloads models and may take 10-30 minutes:**
 
-    This starts the `app`, `docling`, and `marker_ocr` containers with ROCm GPU support.
+1. **Container Build:** ROCm base images and dependencies (~5-10 minutes)
+2. **Model Downloads:** 
+   - Granite LLM model (~3-7GB depending on model choice)
+   - SentenceTransformers embedding model (~90MB)  
+   - Marker OCR models (~2GB)
+3. **Service Initialization:** GPU detection and component setup
 
-4.  **Monitor startup (first run):**
+### Monitoring Startup
 
-    ```bash
-    # Watch logs for model downloads (first run only)
-    podman-compose logs -f app
-    ```
+```bash
+# View all service logs
+podman compose logs -f
 
-    **First run will download:**
-    - Granite LLM model (~3-7GB depending on model choice)
-    - SentenceTransformers embedding model (~90MB)
-    - Marker OCR models (~2GB)
+# View specific service logs
+podman compose logs -f app          # Main application
+podman compose logs -f --tail=20 app # Last 20 lines
 
-5.  **Verify services are running:**
+# Check service status
+podman compose ps
+```
 
-    ```bash
-    podman-compose ps
-    ```
+**All services should show "Up" status with proper port mappings:**
+- **app**: `0.0.0.0:8000->8000/tcp`
+- **docling**: `0.0.0.0:8001->8001/tcp` 
+- **marker_ocr**: `0.0.0.0:8003->8003/tcp`
 
-    All services should show "Up" status. If not, check logs:
-    ```bash
-    podman-compose logs app      # Main application
-    podman-compose logs marker_ocr  # OCR service
-    podman-compose logs docling  # Document parser
-    ```
+### GPU Verification
 
-6.  **Verify ROCm GPU access:**
-
-    ```bash
-    # Check GPU detection in app container
-    podman-compose exec app python3 -c "
-    import torch
-    print(f'ROCm CUDA available: {torch.cuda.is_available()}')
-    print(f'GPU count: {torch.cuda.device_count()}')
-    if torch.cuda.is_available():
-        print(f'GPU name: {torch.cuda.get_device_name(0)}')
-        print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB')
-    "
-    ```
-
-    **Expected output for RX 7700S:**
-    ```
-    ROCm CUDA available: True
-    GPU count: 1
-    GPU name: AMD Radeon RX 7700S
-    GPU memory: 12.0 GB
-    ```
+```bash
+# Test ROCm GPU access in container
+podman compose exec app python3 -c "
+import torch
+print(f'ROCm available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+"
+```
 
 -----
 
@@ -744,17 +638,44 @@ Your Question → ChromaDB Search → Context Retrieval → Granite LLM → Resp
 
 ## 8. Troubleshooting
 
- ### Common Issues and Solutions
+### Common Issues and Solutions
+
+**🔧 Environment Variables Not Loaded:**
+- **Error:** `no port specified: :<empty>` or similar warnings
+- **Fix:** Ensure `.env` file exists in project root:
+```bash
+# Check if .env exists
+ls -la .env
+
+# Copy from example if missing
+cp podman.env .env
+```
+
+**🔧 Import Errors:**
+- **Error:** `ModuleNotFoundError: No module named 'NiceGUI'`
+- **Fix:** This indicates a container build issue. Rebuild:
+```bash
+podman compose down
+podman compose up --build -d
+```
 
 **🔧 Container Startup Issues:**
 ```bash
 # Check service status
-podman-compose ps
+podman compose ps
 
 # View logs for specific services
-podman-compose logs app
-podman-compose logs marker_ocr
-podman-compose logs docling
+podman compose logs app
+podman compose logs marker_ocr
+podman compose logs docling
+```
+
+**🔧 Syntax Errors:**
+- **Error:** `SyntaxError: no binding for nonlocal`
+- **Fix:** Code issue resolved in latest version. Update and rebuild:
+```bash
+git pull origin main
+podman compose up --build -d
 ```
 
 **🎯 AMD GPU Not Detected:**
@@ -767,7 +688,7 @@ rocm-smi --showproductname
 groups | grep -E "render|video"
 
 # Test GPU in container
-podman-compose exec app python3 -c "import torch; print(f'ROCm available: {torch.cuda.is_available()}')"
+podman compose exec app python3 -c "import torch; print(f'ROCm available: {torch.cuda.is_available()}')"
 ```
 
 **📥 Model Download Issues:**
@@ -778,17 +699,17 @@ podman-compose exec app python3 -c "import torch; print(f'ROCm available: {torch
 
 **💾 Out of GPU Memory:**
 ```bash
-# Use smaller model in podman.env
+# Use smaller model in .env
 GRANITE_MODEL_NAME=ibm/granite-3b-code-instruct
 
 # Clear GPU memory
-podman-compose restart app
+podman compose restart app
 ```
 
 **🚫 "RAG components not initialized" Error:**
 - **Cause:** App container still downloading models or GPU error
 - **Solution:** Wait 5-10 minutes for first-time model downloads
-- **Check:** `podman-compose logs app` for detailed errors
+- **Check:** `podman compose logs app` for detailed errors
 
 **📄 Document Processing Failures:**
 - **PDF issues:** Try both PyPDF and Marker OCR processing
@@ -804,7 +725,7 @@ sudo setsebool -P container_manage_cgroup true
 
 **⚡ Slow Performance Issues:**
 ```bash
-# Optimize ROCm settings in podman.env
+# Optimize ROCm settings in .env
 HSA_OVERRIDE_GFX_VERSION=10.3.0
 AMD_SERIALIZE_KERNEL=3
 HIP_LAUNCH_BLOCKING=1
@@ -819,7 +740,7 @@ rocm-smi --showmeminfo
 podman stats
 
 # Detailed app logs
-podman-compose logs -f app --tail=100
+podman compose logs -f app --tail=100
 ```
 
 -----
@@ -860,12 +781,12 @@ podman-compose logs -f app --tail=100
 
 **Changing Models:**
 ```bash
-# Edit podman.env
+# Edit .env
 GRANITE_MODEL_NAME=ibm/granite-7b-instruct
 
 # Restart to download new model
-podman-compose down
-podman-compose up -d
+podman compose down
+podman compose up -d
 ```
 
 **Other Compatible Models:**
@@ -881,7 +802,7 @@ podman-compose up -d
 
 **Environment Tuning:**
 ```bash
-# Add to podman.env for optimal performance
+# Add to .env for optimal performance
 HSA_OVERRIDE_GFX_VERSION=10.3.0
 PYTORCH_ROCM_ARCH=gfx1031
 HIP_LAUNCH_BLOCKING=1
@@ -902,7 +823,7 @@ MAX_BATCH_SIZE = 10  # Process fewer docs at once
 
 **For systems with multiple AMD GPUs:**
 ```yaml
-# Update podman-compose.yml
+# Update compose.yml
 environment:
   HIP_VISIBLE_DEVICES: "0,1"  # Use multiple GPUs
 ```
@@ -914,13 +835,13 @@ environment:
 ### Regular Shutdown
 ```bash
 cd ~/downloads/openLM/
-podman-compose down
+podman compose down
 ```
 
 ### Complete Cleanup (removes all data)
 ```bash
 cd ~/downloads/openLM/
-podman-compose down --rmi all --volumes
+podman compose down --rmi all --volumes
 
 # Optional: Remove model cache (will re-download on next start)
 rm -rf ~/.cache/huggingface/transformers/
@@ -929,13 +850,14 @@ rm -rf ~/.cache/huggingface/transformers/
 rm -rf ~/downloads/openLM/app/chroma_db/
 ```
 
-### Selective Cleanup
+### Restart Services
 ```bash
-# Keep processed documents, remove only containers
-podman-compose down --rmi all
+# Quick restart (keeps containers)
+podman compose restart
 
-# Clear only model cache (keeps document processing)
-rm -rf ~/.cache/huggingface/transformers/
+# Full rebuild and restart
+podman compose down
+podman compose up --build -d
 ```
 
 -----

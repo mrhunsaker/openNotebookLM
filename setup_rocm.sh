@@ -86,7 +86,7 @@ check_rocm() {
 setup_directories() {
     print_status "Setting up project directories..."
 
-    local base_dir="$HOME/downloads/openLM"
+    local base_dir="$HOME/GitHubRepos/openNotebookLM"
 
     # Create main directories
     mkdir -p "$base_dir"/{app,sources,docling_service,marker_service}

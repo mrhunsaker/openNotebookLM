@@ -1,6 +1,5 @@
 # Use ROCm base image for AMD GPU support
 FROM rocm/pytorch:latest
-
 WORKDIR /app
 
 # Set environment variables for ROCm
@@ -30,12 +29,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Upgrade pip and install build tools
 RUN pip install --upgrade pip setuptools wheel
 
-# Install ROCm-specific PyTorch first
-RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm5.6
+# Check existing PyTorch installation and optionally upgrade
+RUN python3 -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'ROCm available: {torch.cuda.is_available()}')" || \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm5.7
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --verbose
 
 # Copy the application code
 COPY . .

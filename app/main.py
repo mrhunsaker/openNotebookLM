@@ -1,6 +1,6 @@
 import os
 import asyncio
-from NiceGUI import ui, app
+from nicegui import ui, app
 from rag_pipeline import process_document_folder, chat_with_data, initialize_rag_pipeline, get_or_create_vector_store_for_notebook
 
 # Load environment variables (for local testing outside of podman-compose)
@@ -73,6 +73,72 @@ def main_page():
 
     global active_notebook_name, active_vector_store
 
+    async def send_message():
+        query = user_input.value
+        if not query:
+            ui.notify("Please type your question.", type='warning')
+            status_aria_live_region.set_text("Please type your question.")
+            return
+
+        if not active_notebook_name or not active_vector_store:
+            ui.notify("Please select a notebook before chatting.", type='warning')
+            status_aria_live_region.set_text("Please select a notebook before chatting.")
+            return
+
+        # Append user message
+        with chat_history:
+            user_message_row = ui.row().classes('w-full items-start').on('click', lambda: ui.run_javascript(f'navigator.clipboard.writeText("{query.replace("\"", "\\\"")}")', respond=False))
+            with user_message_row:
+                ui.avatar('person').classes('mr-2').props('aria-hidden="true"') # Decorative, hide from SR
+                ui.markdown(f"**You:** {query}").classes('p-2 bg-blue-100 rounded-lg max-w-[80%]')
+                # Add a visually hidden span for screen reader to announce message submission
+                ui.element('span').classes('sr-only').set_text(f"You said: {query}")
+
+        user_input.set_value('')
+        status_aria_live_region.set_text("Message sent. Awaiting AI response.")
+
+        if not rag_shared_components or not active_vector_store:
+            ui.notify("RAG components not initialized or notebook not selected. Please wait or check logs.", type='negative')
+            status_aria_live_region.set_text("RAG system not ready. Please try again later.")
+            with chat_history:
+                ui.row().classes('w-full items-start').add(
+                    ui.avatar('robot_2').classes('mr-2').props('aria-hidden="true"'),
+                    ui.markdown("**AI:** RAG system is not ready. Please try again later.").classes('p-2 bg-gray-200 rounded-lg max-w-[80%]'),
+                )
+            return
+
+        # Get response from RAG pipeline
+        try:
+            response_text, citations = await chat_with_data(
+                query,
+                active_vector_store,
+                rag_shared_components['llm']
+            )
+
+            full_response = response_text
+            if citations:
+                full_response += "\n\n**Sources:**\n"
+                for i, citation in enumerate(citations):
+                    full_response += f"{i+1}. {citation}\n"
+
+            with chat_history:
+                ai_message_row = ui.row().classes('w-full items-start')
+                with ai_message_row:
+                    ui.avatar('robot_2').classes('mr-2').props('aria-hidden="true"') # Decorative, hide from SR
+                    ai_markdown_element = ui.markdown(f"**AI:** {full_response}").classes('p-2 bg-gray-200 rounded-lg max-w-[80%]')
+                    # For screen readers, ensure the entire response is available and announced
+                    # The chat_history's aria-live="polite" should handle this.
+                    # If the response is very long, consider summarizing or breaking it down.
+            status_aria_live_region.set_text("AI response received.")
+        except Exception as e:
+            with chat_history:
+                ui.row().classes('w-full items-start').add(
+                    ui.avatar('robot_2').classes('mr-2').props('aria-hidden="true"'),
+                    ui.markdown(f"**AI:** An error occurred during chat: {e}").classes('p-2 bg-red-200 rounded-lg max-w-[80%]'),
+                )
+            ui.notify(f"Error during chat: {e}", type='negative')
+            status_aria_live_region.set_text(f"Error during chat: {e}.")
+
     # Using a unique ID for the select element, which is then linked by the input
     notebook_select_id = 'notebook-select-input'
     notebook_selector = ui.select(
@@ -87,7 +153,6 @@ def main_page():
     current_notebook_folder_input = ui.input(
         label="Notebook Folder Path (relative to ~/downloads/openLM/sources)",
         placeholder="e.g., my_research_notes",
-        id=notebook_select_id, # Link the input field to the label of the select
         # Validation for input:
         validation={'Please enter a folder name.': lambda value: bool(value and value.strip())}
     ).props('clearable').classes('w-full')
@@ -129,7 +194,7 @@ def main_page():
 
 
     async def initialize_app_components():
-        nonlocal rag_shared_components
+        global rag_shared_components
         processing_status.set_text("Initializing shared RAG components (LLM, Embeddings)...")
         status_aria_live_region.set_text("Initializing application components.")
         try:
